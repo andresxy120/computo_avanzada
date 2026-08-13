@@ -16,9 +16,9 @@ fruta_usuario = [peso, diametro, dulzor]
 st.write("Vector de tu fruta:", fruta_usuario)
 
 # Frutas conocidas
-manzana = [170, 7.0, 7]
-banano = [120, 5.0, 9]
-naranja = [200, 8.0, 6]
+manzana = [118, 7.0, 7]
+banano = [120, 5.0, 35]
+naranja = [335, 11.8, 7]
 
 # Calculamos las distancias
 
