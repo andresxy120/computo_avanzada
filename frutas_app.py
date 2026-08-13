@@ -6,9 +6,9 @@ st.title("🍎 ¿Qué fruta es más parecida?")
 st.write("Introduce las características de una fruta.")
 
 # Datos de la fruta que queremos analizar
-peso = st.number_input("Peso (gramos)", value=180)
-diametro = st.number_input("Diámetro (cm)", value=7.0)
-dulzor = st.number_input("Dulzor (0 - 10)", value=8.0)
+peso = st.number_input("Peso (gramos)", value=90)
+diametro = st.number_input("Diámetro (cm)", value=2.0)
+dulzor = st.number_input("Dulzor (0 - 10)", value=15.1)
 
 # Convertimos los datos en un vector
 fruta_usuario = [peso, diametro, dulzor]
