@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import urllib3
+import plotly.express as px
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -155,6 +156,25 @@ if consultar:
             col3.metric("Índice de calidad", f"{indice_calidad} / 100")
             col4.metric("Outliers detectados", n_outliers)
 
+            # --- Tasa de cambio ---
+df["delta_nivel"] = df["nivel"].diff()
+df["delta_horas"] = df["fecha"].diff().dt.total_seconds() / 3600
+df["tasa_cambio"] = df["delta_nivel"] / df["delta_horas"]  # unidades por hora
+
+st.subheader("Tasa de cambio del nivel")
+st.line_chart(df.set_index("fecha")["tasa_cambio"])
+
+# Alerta simple si la tasa supera un umbral definido por el usuario
+umbral_tasa = st.sidebar.number_input("Umbral de alerta (unidades/hora)", value=0.5, step=0.1)
+subidas_rapidas = df[df["tasa_cambio"] > umbral_tasa]
+
+if not subidas_rapidas.empty:
+    st.warning(f"⚠️ Se detectaron {len(subidas_rapidas)} lecturas con subida rápida (> {umbral_tasa}/h)")
+    with st.expander("Ver lecturas con subida rápida"):
+        st.dataframe(subidas_rapidas[["fecha", "nivel", "tasa_cambio"]], use_container_width=True)
+else:
+    st.success("✅ No se detectaron subidas rápidas en el periodo consultado")
+
             # --- Gráfico de la serie ---
             st.subheader("Serie de nivel")
             st.line_chart(df.set_index("fecha")["nivel"])
@@ -164,6 +184,14 @@ if consultar:
             if not coords_reales:
                 st.caption("La API no trajo latitud/longitud de la estación — se muestra el punto de partida (Pascual Bravo). Ajusta `CANDIDATOS_LAT` / `CANDIDATOS_LON` si conoces el nombre real de esas llaves.")
             st.map(pd.DataFrame({"lat": [lat], "lon": [lon]}), zoom=10)
+
+
+
+# --- Boxplot de distribución de niveles ---
+st.subheader("Distribución de niveles (boxplot)")
+fig_box = px.box(df, y="nivel", points="outliers",
+                  title="Distribución del nivel en el periodo consultado")
+st.plotly_chart(fig_box, use_container_width=True)
 
             # --- Detalle de calidad ---
             with st.expander("Detalle del índice de calidad"):
