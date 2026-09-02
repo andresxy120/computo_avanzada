@@ -120,7 +120,7 @@ codigo_estacion = st.sidebar.text_input("Código de estación", "42")
 fecha_desde = st.sidebar.date_input("Desde", pd.to_datetime("2026-08-23")).strftime("%Y-%m-%d")
 fecha_hasta = st.sidebar.date_input("Hasta", pd.to_datetime("2026-08-30")).strftime("%Y-%m-%d")
 calidad = st.sidebar.selectbox("Calidad", [1, 0], index=0, help="1 = solo datos validados")
-    st.sidebar.subheader("Alertas")
+st.sidebar.subheader("Alertas")
 umbral_tasa = st.sidebar.number_input(
     "Umbral de alerta (unidades/hora)", value=0.5, step=0.1,
     help="Se marca una lectura como 'subida rápida' si la tasa de cambio supera este valor."
@@ -154,6 +154,13 @@ if consultar:
             lat, lon, coords_reales = detectar_coordenadas(datos_crudos)
             indice_calidad, huecos, n_outliers = calcular_indice_calidad(df)
 
+                # --- Tasa de cambio (Δnivel/Δt) ---
+            df["delta_nivel"] = df["nivel"].diff()
+            df["delta_horas"] = df["fecha"].diff().dt.total_seconds() / 3600
+            df["tasa_cambio"] = df["delta_nivel"] / df["delta_horas"]
+ 
+            subidas_rapidas = df[df["tasa_cambio"] > umbral_tasa]
+
             # --- Métricas principales ---
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("Lecturas", len(df))
@@ -161,24 +168,21 @@ if consultar:
             col3.metric("Índice de calidad", f"{indice_calidad} / 100")
             col4.metric("Outliers detectados", n_outliers)
 
-            # --- Tasa de cambio ---
-df["delta_nivel"] = df["nivel"].diff()
-df["delta_horas"] = df["fecha"].diff().dt.total_seconds() / 3600
-df["tasa_cambio"] = df["delta_nivel"] / df["delta_horas"]  # unidades por hora
-
-st.subheader("Tasa de cambio del nivel")
-st.line_chart(df.set_index("fecha")["tasa_cambio"])
-
-if not subidas_rapidas.empty:
-    st.warning(f"⚠️ Se detectaron {len(subidas_rapidas)} lecturas con subida rápida (> {umbral_tasa}/h)")
-    with st.expander("Ver lecturas con subida rápida"):
-        st.dataframe(subidas_rapidas[["fecha", "nivel", "tasa_cambio"]], use_container_width=True)
-else:
-    st.success("✅ No se detectaron subidas rápidas en el periodo consultado")
-
             # --- Gráfico de la serie ---
             st.subheader("Serie de nivel")
             st.line_chart(df.set_index("fecha")["nivel"])
+            
+              # --- Tasa de cambio ---
+            st.subheader("Tasa de cambio del nivel")
+            st.line_chart(df.set_index("fecha")["tasa_cambio"])
+ 
+            if not subidas_rapidas.empty:
+                st.warning(f"⚠️ Se detectaron {len(subidas_rapidas)} lecturas con subida rápida (> {umbral_tasa}/h)")
+                with st.expander("Ver lecturas con subida rápida"):
+                    st.dataframe(subidas_rapidas[["fecha", "nivel", "tasa_cambio"]], use_container_width=True)
+            else:
+                st.success("✅ No se detectaron subidas rápidas en el periodo consultado")
+ 
 
             # --- Mapa de la estación ---
             st.subheader("Ubicación de la estación")
