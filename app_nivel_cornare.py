@@ -120,8 +120,11 @@ codigo_estacion = st.sidebar.text_input("Código de estación", "42")
 fecha_desde = st.sidebar.date_input("Desde", pd.to_datetime("2026-08-23")).strftime("%Y-%m-%d")
 fecha_hasta = st.sidebar.date_input("Hasta", pd.to_datetime("2026-08-30")).strftime("%Y-%m-%d")
 calidad = st.sidebar.selectbox("Calidad", [1, 0], index=0, help="1 = solo datos validados")
-umbral_tasa = st.sidebar.number_input("Umbral de alerta (unidades/hora)", value=0.5, step=0.1)
-subidas_rapidas = df[df["tasa_cambio"] > umbral_tasa]
+    st.sidebar.subheader("Alertas")
+umbral_tasa = st.sidebar.number_input(
+    "Umbral de alerta (unidades/hora)", value=0.5, step=0.1,
+    help="Se marca una lectura como 'subida rápida' si la tasa de cambio supera este valor."
+)
 consultar = st.sidebar.button("🔍 Consultar", type="primary")
 
 st.title("🌊 Nivel de ríos y quebradas — CORNARE")
