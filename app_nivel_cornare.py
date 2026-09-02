@@ -120,6 +120,8 @@ codigo_estacion = st.sidebar.text_input("Código de estación", "42")
 fecha_desde = st.sidebar.date_input("Desde", pd.to_datetime("2026-08-23")).strftime("%Y-%m-%d")
 fecha_hasta = st.sidebar.date_input("Hasta", pd.to_datetime("2026-08-30")).strftime("%Y-%m-%d")
 calidad = st.sidebar.selectbox("Calidad", [1, 0], index=0, help="1 = solo datos validados")
+umbral_tasa = st.sidebar.number_input("Umbral de alerta (unidades/hora)", value=0.5, step=0.1)
+subidas_rapidas = df[df["tasa_cambio"] > umbral_tasa]
 consultar = st.sidebar.button("🔍 Consultar", type="primary")
 
 st.title("🌊 Nivel de ríos y quebradas — CORNARE")
@@ -164,10 +166,6 @@ df["tasa_cambio"] = df["delta_nivel"] / df["delta_horas"]  # unidades por hora
 st.subheader("Tasa de cambio del nivel")
 st.line_chart(df.set_index("fecha")["tasa_cambio"])
 
-# Alerta simple si la tasa supera un umbral definido por el usuario
-umbral_tasa = st.sidebar.number_input("Umbral de alerta (unidades/hora)", value=0.5, step=0.1)
-subidas_rapidas = df[df["tasa_cambio"] > umbral_tasa]
-
 if not subidas_rapidas.empty:
     st.warning(f"⚠️ Se detectaron {len(subidas_rapidas)} lecturas con subida rápida (> {umbral_tasa}/h)")
     with st.expander("Ver lecturas con subida rápida"):
@@ -187,23 +185,17 @@ else:
 
 
 
-# --- Boxplot de distribución de niveles ---
-st.subheader("Distribución de niveles (boxplot)")
-fig_box = px.box(df, y="nivel", points="outliers",
-                  title="Distribución del nivel en el periodo consultado")
-st.plotly_chart(fig_box, use_container_width=True)
-
-            # --- Detalle de calidad ---
-            with st.expander("Detalle del índice de calidad"):
-                st.write(f"- Huecos de reporte detectados: **{huecos}**")
-                st.write(f"- Outliers (IQR + nivel negativo): **{n_outliers}** de {len(df)} lecturas")
-                st.write("El índice combina completitud de la serie (70%) y proporción de datos sin outliers (30%).")
-
-            # --- Tabla y descarga ---
-            with st.expander("Ver datos crudos"):
-                st.dataframe(df, use_container_width=True)
-
-            csv = df.to_csv(index=False).encode("utf-8")
-            st.download_button("⬇️ Descargar CSV", csv, file_name=f"nivel_estacion_{codigo_estacion}.csv", mime="text/csv")
-else:
-    st.info("Ajusta los parámetros en el sidebar y presiona **Consultar**.")
+                # --- Boxplot de distribución de niveles ---
+            st.subheader("Distribución de niveles (boxplot)")
+            col_box1, col_box2 = st.columns(2)
+ 
+            with col_box1:
+                fig_box = px.box(df, y="nivel", points="outliers",
+                                  title="Distribución general del nivel")
+                st.plotly_chart(fig_box, use_container_width=True)
+ 
+            with col_box2:
+                df["dia"] = df["fecha"].dt.date
+                fig_box_dia = px.box(df, x="dia", y="nivel", points="outliers",
+                                      title="Distribución del nivel por día")
+                st.plotly_chart(fig_box_dia, use_container_width=True)
