@@ -245,7 +245,7 @@ with tab4:
             ).fit(disp=False)
         pronostico = modelo_fit.forecast(horas_test)
 
-        if s != 24:
+        if s != 12:
             st.warning(
                 f"⚠️ Declaraste s={s}, pero el ciclo real del sensor es de 24 horas. "
                 "Observa cómo empeora el error cuando el período estacional no coincide con el real."
