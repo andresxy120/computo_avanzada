@@ -32,11 +32,17 @@ CANDIDATOS_LAT = ["lat", "latitude", "latitud"]
 CANDIDATOS_LON = ["lng", "lon", "longitude", "longitud"]
 
 
-# ============================
+st.set_page_config(
+    page_title="Nivel de estación — CORNARE",
+    page_icon="🌊",
+    layout="wide"
+)
+
+
+# ==============================================================
 # DISEÑO CSS
-# ============================
-st.title("🌊 Nivel de ríos y quebradas — CORNARE")
-st.caption(f"Estudiante: **{nombre_estudiante}** · Estación: **{codigo_estacion}**")
+# ==============================================================
+
 st.markdown("""
 <style>
 
@@ -45,7 +51,7 @@ st.markdown("""
         background-color: #f4f7fb;
     }
 
-    /* Título */
+    /* Títulos */
     h1 {
         color: #0b4f6c;
         font-weight: 700;
@@ -72,6 +78,7 @@ st.markdown("""
         border: none;
         padding: 0.6rem 1.5rem;
         font-weight: bold;
+        width: 100%;
     }
 
     .stButton > button:hover {
@@ -95,29 +102,13 @@ st.markdown("""
         background-color: #d9e2ec;
     }
 
+    /* Alertas */
+    div[data-testid="stAlert"] {
+        border-radius: 10px;
+    }
+
 </style>
 """, unsafe_allow_html=True)
-st.markdown("""
-<div style="
-    background: linear-gradient(135deg, #0b4f6c, #00a6a6);
-    padding: 25px;
-    border-radius: 15px;
-    color: white;
-    margin-bottom: 25px;
-">
-    <h1 style="color:white; margin-bottom:5px;">
-        🌊 Monitor de niveles hídricos
-    </h1>
-    <p style="font-size:18px; margin:0;">
-        Sistema de monitoreo de ríos y quebradas — CORNARE
-    </p>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown(
-    f"**Estudiante:** {nombre_estudiante} &nbsp;&nbsp; | &nbsp;&nbsp; "
-    f"**Estación:** {codigo_estacion}"
-)
 # ------------------------------------------------------------------
 # Funciones de consulta
 # ------------------------------------------------------------------
