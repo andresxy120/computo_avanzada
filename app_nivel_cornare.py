@@ -35,49 +35,89 @@ CANDIDATOS_LON = ["lng", "lon", "longitude", "longitud"]
 # ============================
 # DISEÑO CSS
 # ============================
-st.set_page_config(page_title="Nivel de estación — CORNARE", page_icon="🌊", layout="wide")
+st.title("🌊 Nivel de ríos y quebradas — CORNARE")
+st.caption(f"Estudiante: **{nombre_estudiante}** · Estación: **{codigo_estacion}**")
 st.markdown("""
 <style>
 
-.stApp {
-    background-color: #f4f7fb;
-}
+    /* Fondo general */
+    .stApp {
+        background-color: #f4f7fb;
+    }
 
-h1 {
-    color: #0b4f6c;
-}
+    /* Título */
+    h1 {
+        color: #0b4f6c;
+        font-weight: 700;
+    }
 
-h2, h3 {
-    color: #145374;
-}
+    h2, h3 {
+        color: #145374;
+    }
 
-section[data-testid="stSidebar"] {
-    background-color: #0b4f6c;
-}
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #0b4f6c;
+    }
 
-section[data-testid="stSidebar"] * {
-    color: white;
-}
+    section[data-testid="stSidebar"] * {
+        color: white;
+    }
 
-.stButton > button {
-    background-color: #00a6a6;
-    color: white;
-    border-radius: 10px;
-    border: none;
-    font-weight: bold;
-}
+    /* Botón */
+    .stButton > button {
+        background-color: #00a6a6;
+        color: white;
+        border-radius: 10px;
+        border: none;
+        padding: 0.6rem 1.5rem;
+        font-weight: bold;
+    }
 
-div[data-testid="metric-container"] {
-    background-color: white;
-    border-radius: 12px;
-    padding: 15px;
-    box-shadow: 0px 2px 8px rgba(0,0,0,0.08);
-    border-left: 5px solid #00a6a6;
-}
+    .stButton > button:hover {
+        background-color: #008c8c;
+        color: white;
+    }
+
+    /* Tarjetas de métricas */
+    div[data-testid="metric-container"] {
+        background-color: white;
+        border-radius: 12px;
+        padding: 15px;
+        box-shadow: 0px 2px 8px rgba(0,0,0,0.08);
+        border-left: 5px solid #00a6a6;
+    }
+
+    /* Separadores */
+    hr {
+        border: none;
+        height: 1px;
+        background-color: #d9e2ec;
+    }
 
 </style>
 """, unsafe_allow_html=True)
+st.markdown("""
+<div style="
+    background: linear-gradient(135deg, #0b4f6c, #00a6a6);
+    padding: 25px;
+    border-radius: 15px;
+    color: white;
+    margin-bottom: 25px;
+">
+    <h1 style="color:white; margin-bottom:5px;">
+        🌊 Monitor de niveles hídricos
+    </h1>
+    <p style="font-size:18px; margin:0;">
+        Sistema de monitoreo de ríos y quebradas — CORNARE
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
+st.markdown(
+    f"**Estudiante:** {nombre_estudiante} &nbsp;&nbsp; | &nbsp;&nbsp; "
+    f"**Estación:** {codigo_estacion}"
+)
 # ------------------------------------------------------------------
 # Funciones de consulta
 # ------------------------------------------------------------------
