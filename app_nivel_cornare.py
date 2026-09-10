@@ -39,72 +39,7 @@ st.markdown(
     "<h1 style='color: black;'>🌊 Nivel de estación — CORNARE</h1>",
     unsafe_allow_html=True
 )
-st.markdown("""
-<style>
 
-    /* Fondo general */
-    .stApp {
-        background-color: #f4f7fb;
-    }
-
-    /* Títulos */
-    h1 {
-        color: #000000;
-        font-weight: 700;
-    }
-
-    h2, h3 {
-        color: #145374;
-    }
-
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background-color: #0b4f6c;
-    }
-
-    section[data-testid="stSidebar"] * {
-        color: white;
-    }
-
-    /* Botón */
-    .stButton > button {
-        background-color: #00a6a6;
-        color: white;
-        border-radius: 10px;
-        border: none;
-        padding: 0.6rem 1.5rem;
-        font-weight: bold;
-        width: 100%;
-    }
-
-    .stButton > button:hover {
-        background-color: #008c8c;
-        color: white;
-    }
-
-    /* Tarjetas de métricas */
-    div[data-testid="metric-container"] {
-        background-color: white;
-        border-radius: 12px;
-        padding: 15px;
-        box-shadow: 0px 2px 8px rgba(0,0,0,0.08);
-        border-left: 5px solid #00a6a6;
-    }
-
-    /* Separadores */
-    hr {
-        border: none;
-        height: 1px;
-        background-color: #d9e2ec;
-    }
-
-    /* Alertas */
-    div[data-testid="stAlert"] {
-        border-radius: 10px;
-    }
-
-</style>
-""", unsafe_allow_html=True)
 # ------------------------------------------------------------------
 # Funciones de consulta
 # ------------------------------------------------------------------
@@ -276,3 +211,69 @@ if consultar:
                 fig_box_dia = px.box(df, x="dia", y="nivel", points="outliers",
                                       title="Distribución del nivel por día")
                 st.plotly_chart(fig_box_dia, use_container_width=True)
+st.markdown("""
+<style>
+
+    /* Fondo general */
+    .stApp {
+        background-color: #f4f7fb;
+    }
+
+    /* Títulos */
+    h1 {
+        color: #000000;
+        font-weight: 700;
+    }
+
+    h2, h3 {
+        color: #145374;
+    }
+
+    /* Sidebar */
+    section[data-testid="stSidebar"] {
+        background-color: #0b4f6c;
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: white;
+    }
+
+    /* Botón */
+    .stButton > button {
+        background-color: #00a6a6;
+        color: white;
+        border-radius: 10px;
+        border: none;
+        padding: 0.6rem 1.5rem;
+        font-weight: bold;
+        width: 100%;
+    }
+
+    .stButton > button:hover {
+        background-color: #008c8c;
+        color: white;
+    }
+
+    /* Tarjetas de métricas */
+    div[data-testid="metric-container"] {
+        background-color: white;
+        border-radius: 12px;
+        padding: 15px;
+        box-shadow: 0px 2px 8px rgba(0,0,0,0.08);
+        border-left: 5px solid #00a6a6;
+    }
+
+    /* Separadores */
+    hr {
+        border: none;
+        height: 1px;
+        background-color: #d9e2ec;
+    }
+
+    /* Alertas */
+    div[data-testid="stAlert"] {
+        border-radius: 10px;
+    }
+
+</style>
+""", unsafe_allow_html=True)
