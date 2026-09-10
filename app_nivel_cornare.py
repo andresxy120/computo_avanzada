@@ -36,14 +36,16 @@ st.set_page_config(
     page_title="Nivel de estación — CORNARE",
     page_icon="🌊",
     layout="wide",
-    color= #000000
 )
 
 
 # ==============================================================
 # DISEÑO CSS
 # ==============================================================
-
+st.markdown(
+    "<h1 style='color: black;'>Nivel de estación — CORNARE</h1>",
+    unsafe_allow_html=True
+)
 st.markdown("""
 <style>
 
