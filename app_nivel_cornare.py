@@ -47,6 +47,18 @@ st.markdown("""
         background-color: #f4f7fb;
     }
 
+    /* --- FIX: forzar texto oscuro en todo el contenido principal ---
+       (el tema oscuro de Streamlit deja el texto en blanco por defecto,
+       por eso no se veía sobre el fondo claro) */
+    .stApp, .stApp p, .stApp span, .stApp label,
+    .stApp li, .stApp .stMarkdown, .stApp .stText,
+    div[data-testid="stMetricLabel"], div[data-testid="stMetricValue"],
+    div[data-testid="stMetricDelta"],
+    .stApp [data-testid="stExpander"] summary,
+    .stApp [data-testid="stDataFrame"] {
+        color: #1a1a1a !important;
+    }
+
     /* Títulos */
     h1 {
         color: #000000;
@@ -54,22 +66,23 @@ st.markdown("""
     }
 
     h2, h3 {
-        color: #145374;
+        color: #145374 !important;
     }
 
-    /* Sidebar */
+    /* Sidebar (esto SÍ debe quedar en blanco, va después para que gane
+       especificidad sobre las reglas de arriba) */
     section[data-testid="stSidebar"] {
         background-color: #0b4f6c;
     }
 
     section[data-testid="stSidebar"] * {
-        color: white;
+        color: white !important;
     }
 
     /* Botón */
     .stButton > button {
         background-color: #00a6a6;
-        color: white;
+        color: white !important;
         border-radius: 10px;
         border: none;
         padding: 0.6rem 1.5rem;
@@ -79,12 +92,12 @@ st.markdown("""
 
     .stButton > button:hover {
         background-color: #008c8c;
-        color: white;
+        color: white !important;
     }
 
     /* Tarjetas de métricas */
     div[data-testid="metric-container"] {
-        background-color: 14743F;
+        background-color: #eafaf1;
         border-radius: 12px;
         padding: 15px;
         box-shadow: 0px 2px 8px rgba(0,0,0,0.08);
