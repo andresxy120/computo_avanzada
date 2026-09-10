@@ -35,7 +35,8 @@ CANDIDATOS_LON = ["lng", "lon", "longitude", "longitud"]
 st.set_page_config(
     page_title="Nivel de estación — CORNARE",
     page_icon="🌊",
-    layout="wide"
+    layout="wide",
+    color= #000000
 )
 
 
