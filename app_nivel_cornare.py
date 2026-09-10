@@ -84,7 +84,7 @@ st.markdown("""
 
     /* Tarjetas de métricas */
     div[data-testid="metric-container"] {
-        background-color: white;
+        background-color: 14743F;
         border-radius: 12px;
         padding: 15px;
         box-shadow: 0px 2px 8px rgba(0,0,0,0.08);
