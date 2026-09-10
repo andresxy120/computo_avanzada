@@ -35,7 +35,8 @@ CANDIDATOS_LON = ["lng", "lon", "longitude", "longitud"]
 # ============================
 # DISEÑO CSS
 # ============================
-st.set_page_config(page_title="Nivel de estación — CORNARE", page_icon="🌊", layout="wide")
+st.title("🌊 Nivel de ríos y quebradas — CORNARE")
+st.caption(f"Estudiante: **{nombre_estudiante}** · Estación: **{codigo_estacion}**")
 st.markdown("""
 <style>
 
