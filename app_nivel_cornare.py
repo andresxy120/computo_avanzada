@@ -53,7 +53,7 @@ st.markdown("""
 
     /* Títulos */
     h1 {
-        color: #0b4f6c;
+        color: #000000;
         font-weight: 700;
     }
 
