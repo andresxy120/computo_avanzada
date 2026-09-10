@@ -43,7 +43,7 @@ st.set_page_config(
 # DISEÑO CSS
 # ==============================================================
 st.markdown(
-    "<h1 style='color: black;'>Nivel de estación — CORNARE</h1>",
+    "<h1 style='color: black;'>🌊 Nivel de estación — CORNARE</h1>",
     unsafe_allow_html=True
 )
 st.markdown("""
