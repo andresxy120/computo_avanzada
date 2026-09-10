@@ -67,7 +67,7 @@ st.markdown("""
     }
 
     section[data-testid="stSidebar"] * {
-        color: black;
+        color: white;
     }
 
     /* Botón */
