@@ -198,8 +198,7 @@ umbral_tasa = st.sidebar.number_input(
 )
 consultar = st.sidebar.button("🔍 Consultar", type="primary")
 
-st.title("🌊 Nivel de ríos y quebradas — CORNARE")
-st.caption(f"Estudiante: **{nombre_estudiante}** · Estación: **{codigo_estacion}**")
+
 
 # ------------------------------------------------------------------
 # Consulta y procesamiento
