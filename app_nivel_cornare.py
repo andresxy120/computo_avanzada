@@ -58,7 +58,7 @@ st.markdown("""
     }
 
     h2, h3 {
-        color: #145374;
+        color: #000000;
     }
 
     /* Sidebar */
