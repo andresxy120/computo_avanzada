@@ -1,320 +1,293 @@
-import streamlit as st
+"""
+Predictor de Sensación Térmica — Taller IoT ET0197
+Consulta datos reales de InfluxDB (temperatura y humedad de un ESP32),
+entrena un modelo de regresión lineal y permite predecir la sensación
+térmica de forma interactiva. Pensado para desplegarse en Streamlit
+Community Cloud: sin autorefresh, solo librerías estándar del ecosistema
+científico de Python (pandas, numpy, scikit-learn, matplotlib) más el
+cliente oficial de InfluxDB.
+"""
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 -- necesario para projection='3d'
+import streamlit as st
+from influxdb_client import InfluxDBClient
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-st.set_page_config(page_title="Módulo 5 — Datos: preparación y estructura", layout="wide")
+# ────────────────────────────────────────────────────────────────────────────
+# Configuración de la página
+# ────────────────────────────────────────────────────────────────────────────
+st.set_page_config(page_title="Predictor Sensación Térmica", page_icon="🌡️", layout="centered")
 
-# ============================================================
-# Generación del dataset (sensores IoT sintéticos)
-# ============================================================
-
-FEATURES = ["temperatura", "humedad", "presion", "lecturas_hora"]
+COLUMNAS = ["temperatura", "humedad", "sensacion_termica"]
 
 
-def generar_dataset(n, semilla, pct_na_temp, pct_na_hum, n_outliers):
-    rng = np.random.default_rng(semilla)
-    fechas = pd.date_range("2026-01-01", periods=n, freq="30min")
+# ────────────────────────────────────────────────────────────────────────────
+# Funciones de datos y modelo
+# ────────────────────────────────────────────────────────────────────────────
+def obtener_datos_crudos(url: str, token: str, org: str, bucket: str, measurement: str, horas: int) -> pd.DataFrame:
+    """Consulta InfluxDB y devuelve el DataFrame TAL COMO llega (con posibles NaN).
 
-    tipos_sensor = rng.choice(["DHT22", "BMP180", "LDR"], size=n, p=[0.5, 0.3, 0.2])
-    ubicaciones = rng.choice(["invernadero_1", "patio", "bodega"], size=n)
-    calidad_senal = rng.choice(["baja", "media", "alta"], size=n, p=[0.1, 0.3, 0.6])
+    Usamos un context manager para que la conexión se cierre apenas termina
+    la consulta -- no queremos mantener conexiones abiertas en Streamlit Cloud.
+    Sin caché: el botón ya controla cuándo se dispara la consulta, así que
+    cada clic debe traer los datos más recientes de InfluxDB.
+    """
+    query = f'''
+    from(bucket: "{bucket}")
+      |> range(start: -{horas}h)
+      |> filter(fn: (r) => r._measurement == "{measurement}")
+      |> filter(fn: (r) => r._field == "temperatura" or r._field == "humedad" or r._field == "sensacion_termica")
+      |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+    '''
+    with InfluxDBClient(url=url, token=token, org=org, verify_ssl=False) as client:
+        df = client.query_api().query_data_frame(query, org=org)
 
-    temperatura = rng.normal(loc=24, scale=3, size=n)
-    humedad = rng.normal(loc=60, scale=10, size=n)
-    presion = rng.normal(loc=1013, scale=5, size=n)
-    lecturas_hora = rng.poisson(lam=12, size=n)
+    if df.empty:
+        return df
 
-    df = pd.DataFrame({
-        "timestamp": fechas,
-        "tipo_sensor": tipos_sensor,
-        "ubicacion": ubicaciones,
-        "calidad_senal": calidad_senal,
-        "temperatura": temperatura,
-        "humedad": humedad,
-        "presion": presion,
-        "lecturas_hora": lecturas_hora,
-    })
-
-    # Missing values
-    if pct_na_temp > 0:
-        idx = rng.choice(df.index, size=int(pct_na_temp / 100 * n), replace=False)
-        df.loc[idx, "temperatura"] = np.nan
-    if pct_na_hum > 0:
-        idx = rng.choice(df.index, size=int(pct_na_hum / 100 * n), replace=False)
-        df.loc[idx, "humedad"] = np.nan
-
-    # Outliers inyectados en temperatura
-    if n_outliers > 0:
-        idx = rng.choice(df.index, size=min(n_outliers, n), replace=False)
-        df.loc[idx, "temperatura"] = rng.choice([-40, 95, 120], size=len(idx))
-
+    df = df[["_time"] + COLUMNAS].copy()
+    df["_time"] = pd.to_datetime(df["_time"])
+    df = df.set_index("_time").sort_index()
+    df.index = df.index.tz_convert("America/Bogota")
     return df
 
 
-def get_df():
-    """Dataset base compartido entre todas las páginas (vía session_state)."""
-    cfg = (
-        st.session_state.get("n", 500),
-        st.session_state.get("semilla", 42),
-        st.session_state.get("pct_na_temp", 5),
-        st.session_state.get("pct_na_hum", 4),
-        st.session_state.get("n_outliers", 6),
-    )
-    if st.session_state.get("_cfg") != cfg or "df_base" not in st.session_state:
-        st.session_state["df_base"] = generar_dataset(*cfg)
-        st.session_state["_cfg"] = cfg
-    return st.session_state["df_base"]
+def preparar_datos(df_crudo: pd.DataFrame) -> pd.DataFrame:
+    """Interpola por tiempo y descarta los bordes que no se pudieron completar."""
+    return df_crudo.interpolate(method="time").dropna()
 
 
-# ============================================================
-# Sidebar — configuración global del dataset
-# ============================================================
+def detectar_outliers_iqr(serie: pd.Series) -> pd.Series:
+    q1, q3 = serie.quantile(0.25), serie.quantile(0.75)
+    iqr = q3 - q1
+    lim_inf, lim_sup = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+    return serie[(serie < lim_inf) | (serie > lim_sup)]
 
-st.sidebar.title("⚙️ Configuración del dataset")
-st.sidebar.caption("Sensores IoT sintéticos (temperatura, humedad, presión, lecturas/hora)")
 
-st.session_state["n"] = st.sidebar.slider("Número de muestras", 100, 2000, 500, step=50)
-st.session_state["semilla"] = st.sidebar.number_input("Semilla aleatoria", value=42, step=1)
-st.session_state["pct_na_temp"] = st.sidebar.slider("% missing en temperatura", 0, 30, 5)
-st.session_state["pct_na_hum"] = st.sidebar.slider("% missing en humedad", 0, 30, 4)
-st.session_state["n_outliers"] = st.sidebar.slider("N° de outliers inyectados (temperatura)", 0, 30, 6)
+@st.cache_data(ttl=300, show_spinner=False)
+def entrenar_modelo(df: pd.DataFrame):
+    """Entrena la regresión lineal y devuelve el modelo junto a sus métricas."""
+    X = df[["temperatura", "humedad"]]
+    y = df["sensacion_termica"]
 
-st.sidebar.markdown("---")
-pagina = st.sidebar.radio(
-    "Navegar por el módulo",
-    [
-        "🏠 Inicio",
-        "1️⃣ Tipos de datos",
-        "2️⃣ Missing values y outliers",
-        "3️⃣ Normalización y estandarización",
-        "4️⃣ Train / Val / Test split",
-        "5️⃣ Probabilidad y estadística",
-    ],
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+    modelo = LinearRegression()
+    modelo.fit(X_train, y_train)
+
+    y_pred = modelo.predict(X_test)
+    metricas = {
+        "mae": mean_absolute_error(y_test, y_pred),
+        "rmse": np.sqrt(mean_squared_error(y_test, y_pred)),
+        "r2": r2_score(y_test, y_pred),
+    }
+    return modelo, metricas
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Barra lateral
+# ────────────────────────────────────────────────────────────────────────────
+st.sidebar.header("Credenciales InfluxDB")
+influx_url = st.sidebar.text_input("URL", placeholder="https://<region>.aws.cloud2.influxdata.com")
+influx_token = st.sidebar.text_input("Token", type="password", placeholder="Tu token de InfluxDB")
+influx_org = st.sidebar.text_input("Organización", placeholder="tu-org o email de la cuenta")
+influx_bucket = st.sidebar.text_input("Bucket", placeholder="T_H")
+influx_measurement = st.sidebar.text_input("Measurement", placeholder="Sensor 1")
+
+st.sidebar.divider()
+st.sidebar.header("Parámetros de consulta")
+horas = st.sidebar.slider("Horas de historial a consultar", min_value=1, max_value=12, value=1, step=1)
+st.sidebar.caption("Datos tomados del sensor DHT22 (ESP32) vía InfluxDB Cloud.")
+
+credenciales_completas = all([influx_url, influx_token, influx_org, influx_bucket, influx_measurement])
+if not credenciales_completas:
+    st.sidebar.warning("Completa todos los campos de credenciales para poder consultar.")
+
+consultar = st.sidebar.button("🔄 Consultar datos y entrenar modelo",
+                               use_container_width=True, disabled=not credenciales_completas)
+
+# ────────────────────────────────────────────────────────────────────────────
+# Cuerpo principal
+# ────────────────────────────────────────────────────────────────────────────
+st.title("🌡️ Predictor de Sensación Térmica")
+st.markdown(
+    "Datos reales de temperatura y humedad tomados por un sensor IoT, "
+    "usados para entrenar un modelo de regresión lineal que predice la sensación térmica."
 )
 
-df = get_df()
+if consultar:
+    error_conexion = None
+    with st.spinner("Consultando InfluxDB..."):
+        try:
+            df_crudo = obtener_datos_crudos(influx_url, influx_token, influx_org,
+                                             influx_bucket, influx_measurement, horas)
+        except Exception as e:
+            error_conexion = str(e)
+            df_crudo = pd.DataFrame()
 
-# ============================================================
-# PÁGINA: INICIO
-# ============================================================
-if pagina == "🏠 Inicio":
-    st.title("Módulo 5 — Datos: preparación y estructura")
-    st.markdown("""
-    Antes de construir cualquier modelo o método computacional, es necesario entender,
-    limpiar y estructurar los datos disponibles. Esta aplicación acompaña el notebook del módulo
-    y permite **experimentar en vivo** con cada concepto usando un dataset sintético de sensores IoT.
-
-    Usa el menú de la izquierda para:
-    - Configurar el dataset (tamaño, % de valores faltantes, outliers inyectados)
-    - Navegar por las 5 secciones del módulo
-    """)
-    st.dataframe(df.head(10), use_container_width=True)
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Filas", len(df))
-    c2.metric("Columnas", len(df.columns))
-    c3.metric("Missing totales", int(df.isna().sum().sum()))
-
-# ============================================================
-# PÁGINA 1: TIPOS DE DATOS
-# ============================================================
-elif pagina == "1️⃣ Tipos de datos":
-    st.header("1️⃣ Tipos de datos")
-    st.markdown("""
-    Cada columna del dataset representa un tipo distinto: numérico continuo, numérico discreto,
-    categórico nominal, categórico ordinal o temporal. Identificarlo correctamente determina
-    qué operaciones tienen sentido sobre esa variable.
-    """)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Tipos originales (detectados por pandas)")
-        st.dataframe(df.dtypes.astype(str).rename("dtype"), use_container_width=True)
-        mem_antes = df.memory_usage(deep=True).sum() / 1024
-        st.metric("Memoria total (antes)", f"{mem_antes:.2f} KB")
-
-    with col2:
-        st.subheader("Conversión explícita de tipos")
-        aplicar = st.checkbox("Convertir columnas categóricas a tipo `category`", value=False)
-        df_conv = df.copy()
-        if aplicar:
-            df_conv["tipo_sensor"] = df_conv["tipo_sensor"].astype("category")
-            df_conv["ubicacion"] = df_conv["ubicacion"].astype("category")
-            orden = ["baja", "media", "alta"]
-            df_conv["calidad_senal"] = pd.Categorical(df_conv["calidad_senal"], categories=orden, ordered=True)
-        st.dataframe(df_conv.dtypes.astype(str).rename("dtype"), use_container_width=True)
-        mem_despues = df_conv.memory_usage(deep=True).sum() / 1024
-        st.metric("Memoria total (después)", f"{mem_despues:.2f} KB",
-                   delta=f"{mem_despues - mem_antes:.2f} KB")
-
-    st.info("💡 `calidad_senal` es una categoría **ordinal** (baja < media < alta): el orden importa, "
-            "a diferencia de `ubicacion` o `tipo_sensor`, que son nominales.")
-
-# ============================================================
-# PÁGINA 2: MISSING VALUES Y OUTLIERS
-# ============================================================
-elif pagina == "2️⃣ Missing values y outliers":
-    st.header("2️⃣ Missing values y outliers")
-
-    st.subheader("Missing values")
-    faltantes = df.isna().sum()
-    faltantes_pct = (faltantes / len(df) * 100).round(2)
-    st.dataframe(
-        pd.DataFrame({"faltantes": faltantes, "% del total": faltantes_pct})[faltantes > 0],
-        use_container_width=True,
-    )
-
-    metodo_imputacion = st.selectbox(
-        "Método de tratamiento para 'temperatura' y 'humedad'",
-        ["Ninguno (dejar NaN)", "Interpolación lineal", "Eliminar filas (dropna)", "Imputar con la media"],
-    )
-
-    df_tratado = df.sort_values("timestamp").reset_index(drop=True).copy()
-    if metodo_imputacion == "Interpolación lineal":
-        df_tratado[["temperatura", "humedad"]] = df_tratado[["temperatura", "humedad"]].interpolate()
-    elif metodo_imputacion == "Eliminar filas (dropna)":
-        df_tratado = df_tratado.dropna(subset=["temperatura", "humedad"])
-    elif metodo_imputacion == "Imputar con la media":
-        df_tratado["temperatura"] = df_tratado["temperatura"].fillna(df_tratado["temperatura"].mean())
-        df_tratado["humedad"] = df_tratado["humedad"].fillna(df_tratado["humedad"].mean())
-
-    st.metric("Missing restantes tras el tratamiento", int(df_tratado[["temperatura", "humedad"]].isna().sum().sum()))
-
-    st.markdown("---")
-    st.subheader("Outliers — método IQR")
-
-    variable = st.selectbox("Variable a analizar", FEATURES, index=0)
-    multiplicador = st.slider("Multiplicador IQR", 0.5, 4.0, 1.5, step=0.1)
-
-    serie = df_tratado[variable].dropna()
-    Q1, Q3 = serie.quantile(0.25), serie.quantile(0.75)
-    IQR = Q3 - Q1
-    lim_inf = Q1 - multiplicador * IQR
-    lim_sup = Q3 + multiplicador * IQR
-    mask = (serie < lim_inf) | (serie > lim_sup)
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Límite inferior", f"{lim_inf:.2f}")
-    c2.metric("Límite superior", f"{lim_sup:.2f}")
-    c3.metric("Outliers detectados", int(mask.sum()))
-
-    fig, axes = plt.subplots(1, 2, figsize=(10, 3.5))
-    axes[0].boxplot(serie)
-    axes[0].set_title(f"{variable} — con outliers")
-    axes[1].boxplot(serie[~mask])
-    axes[1].set_title(f"{variable} — sin outliers detectados")
-    st.pyplot(fig)
-
-# ============================================================
-# PÁGINA 3: NORMALIZACIÓN Y ESTANDARIZACIÓN
-# ============================================================
-elif pagina == "3️⃣ Normalización y estandarización":
-    st.header("3️⃣ Normalización y estandarización")
-    st.markdown("Cada fila del dataset es un vector; el dataset completo es una matriz. "
-                "Aquí puedes comparar el efecto de cada transformación sobre una variable.")
-
-    variable = st.selectbox("Variable", FEATURES, index=2)
-    metodo = st.radio("Transformación", ["Ninguna", "Normalización (Min-Max)", "Estandarización (Z-score)"], horizontal=True)
-
-    serie = df[variable].dropna().to_numpy()
-
-    if metodo == "Normalización (Min-Max)":
-        transformada = (serie - serie.min()) / (serie.max() - serie.min())
-    elif metodo == "Estandarización (Z-score)":
-        transformada = (serie - serie.mean()) / serie.std()
+    if error_conexion:
+        st.error(f"No se pudo conectar a InfluxDB. Revisa tus credenciales.\n\nDetalle: {error_conexion}")
+    elif df_crudo.empty:
+        st.error("No se encontraron datos para el rango de horas seleccionado.")
     else:
-        transformada = serie
+        df = preparar_datos(df_crudo)
+        if df.empty:
+            st.error("Los datos consultados no permitieron preparar una serie válida (todo quedó en NaN).")
+        else:
+            st.session_state["df_crudo"] = df_crudo
+            st.session_state["df"] = df
+            with st.spinner("Entrenando modelo..."):
+                modelo, metricas = entrenar_modelo(df)
+            st.session_state["modelo"] = modelo
+            st.session_state["metricas"] = metricas
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Mínimo", f"{transformada.min():.3f}")
-    c2.metric("Máximo", f"{transformada.max():.3f}")
-    c3.metric("Media", f"{transformada.mean():.3f}")
-    c4.metric("Desv. estándar", f"{transformada.std():.3f}")
+# ────────────────────────────────────────────────────────────────────────────
+# Panel con pestañas (solo si ya hay una consulta en sesión)
+# ────────────────────────────────────────────────────────────────────────────
+if "df" in st.session_state:
+    df_crudo = st.session_state["df_crudo"]
+    df = st.session_state["df"]
+    modelo = st.session_state["modelo"]
+    metricas = st.session_state["metricas"]
+    ultima = df.iloc[-1]
 
-    fig, ax = plt.subplots(figsize=(8, 3.5))
-    ax.hist(transformada, bins=30, color="steelblue", alpha=0.8)
-    ax.set_title(f"{variable} — {metodo}")
-    st.pyplot(fig)
-
-# ============================================================
-# PÁGINA 4: TRAIN / VAL / TEST SPLIT
-# ============================================================
-elif pagina == "4️⃣ Train / Val / Test split":
-    st.header("4️⃣ Train / Val / Test split")
-
-    tipo_split = st.radio("Tipo de partición", ["Aleatoria", "Cronológica"], horizontal=True)
+    st.success(f"{len(df)} lecturas listas — última: {df.index[-1].strftime('%Y-%m-%d %H:%M:%S')}")
 
     col1, col2, col3 = st.columns(3)
-    pct_train = col1.slider("% Train", 40, 90, 70)
-    pct_val = col2.slider("% Validation", 5, 40, 15)
-    pct_test = 100 - pct_train - pct_val
-    col3.metric("% Test (calculado)", f"{max(pct_test, 0)}%")
+    col1.metric("Temperatura", f"{ultima['temperatura']:.1f} °C")
+    col2.metric("Humedad", f"{ultima['humedad']:.1f} %")
+    col3.metric("Sensación Térmica (real)", f"{ultima['sensacion_termica']:.1f} °C")
 
-    if pct_test < 0:
-        st.error("La suma de Train + Validation supera el 100%. Ajusta los sliders.")
-    else:
-        df_ordenado = df.sort_values("timestamp").reset_index(drop=True)
-        n_total = len(df_ordenado)
-        n_train = int(n_total * pct_train / 100)
-        n_val = int(n_total * pct_val / 100)
+    tab_stats, tab_prep, tab_modelo, tab_pred = st.tabs(
+        ["📊 Estadísticos", "🧹 Preparación de datos", "📈 Análisis del modelo", "🔮 Predicción"]
+    )
 
-        if tipo_split == "Cronológica":
-            train = df_ordenado.iloc[:n_train]
-            val = df_ordenado.iloc[n_train:n_train + n_val]
-            test = df_ordenado.iloc[n_train + n_val:]
+    # ── Pestaña: Estadísticos ────────────────────────────────────────────────
+    with tab_stats:
+        st.subheader("Histórico de lecturas")
+        fig, ax = plt.subplots(figsize=(8, 3.5))
+        ax.plot(df.index, df["temperatura"], label="Temperatura (°C)", color="tab:red")
+        ax.plot(df.index, df["humedad"], label="Humedad (%)", color="tab:blue")
+        ax.plot(df.index, df["sensacion_termica"], label="Sensación Térmica (°C)", color="tab:green", alpha=0.7)
+        ax.legend(loc="upper right", fontsize=8)
+        ax.set_xlabel("Tiempo")
+        fig.autofmt_xdate()
+        st.pyplot(fig, use_container_width=True)
+        plt.close(fig)
+
+        st.subheader("Estadísticos descriptivos")
+        st.caption("Mínimo, máximo, promedio y desviación estándar de cada variable (datos ya preparados).")
+        st.dataframe(df[COLUMNAS].describe().T.round(2), use_container_width=True)
+
+        st.subheader("Distribución por variable")
+        fig, axes = plt.subplots(1, 3, figsize=(9, 3.2))
+        for ax, col in zip(axes, COLUMNAS):
+            df.boxplot(column=col, ax=ax)
+            ax.set_title(col, fontsize=9)
+        plt.tight_layout()
+        st.pyplot(fig, use_container_width=True)
+        plt.close(fig)
+
+    # ── Pestaña: Preparación de datos ────────────────────────────────────────
+    with tab_prep:
+        st.subheader("Tipos de datos")
+        st.caption("El índice debe ser de tipo fecha/hora y las variables numéricas (float).")
+        tipos = pd.DataFrame({"tipo": df_crudo.dtypes.astype(str)})
+        st.dataframe(tipos, use_container_width=True)
+
+        st.subheader("Datos faltantes (antes de preparar)")
+        faltantes = df_crudo.isna().sum()
+        porcentaje = (df_crudo.isna().mean() * 100).round(2)
+        st.dataframe(
+            pd.DataFrame({"faltantes": faltantes, "porcentaje (%)": porcentaje}),
+            use_container_width=True,
+        )
+
+        if df_crudo.isna().any().any():
+            st.subheader("Efecto de la interpolación")
+            col_referencia = "temperatura"
+            fig, ax = plt.subplots(figsize=(8, 3))
+            ax.plot(df_crudo.index, df_crudo[col_referencia], marker="o", linestyle="none",
+                    color="crimson", alpha=0.6, label="Datos originales (con huecos)")
+            ax.plot(df.index, df[col_referencia], color="tab:red", alpha=0.8, label="Serie interpolada")
+            ax.legend(fontsize=8)
+            ax.set_title(f"Interpolación aplicada sobre {col_referencia}")
+            fig.autofmt_xdate()
+            st.pyplot(fig, use_container_width=True)
+            plt.close(fig)
         else:
-            barajado = df_ordenado.sample(frac=1, random_state=int(st.session_state["semilla"])).reset_index(drop=True)
-            train = barajado.iloc[:n_train]
-            val = barajado.iloc[n_train:n_train + n_val]
-            test = barajado.iloc[n_train + n_val:]
+            st.info("No se encontraron datos faltantes en esta consulta — no fue necesario interpolar.")
 
-        fig, ax = plt.subplots(figsize=(9, 1.6))
-        sizes = [len(train), len(val), len(test)]
-        colors = ["#4C72B0", "#DD8452", "#55A868"]
-        left = 0
-        for size, color, label in zip(sizes, colors, ["Train", "Val", "Test"]):
-            ax.barh(0, size, left=left, color=color)
-            ax.text(left + size / 2, 0, f"{label}\n{size}", ha="center", va="center", color="white", fontsize=9)
-            left += size
-        ax.set_xlim(0, n_total)
-        ax.axis("off")
-        st.pyplot(fig)
+        st.subheader("Valores atípicos (outliers, regla IQR)")
+        st.caption("Se muestran para revisión — no se eliminan automáticamente de los datos usados en el modelo.")
+        hay_outliers = False
+        for col in COLUMNAS:
+            outliers = detectar_outliers_iqr(df[col])
+            if not outliers.empty:
+                hay_outliers = True
+                st.markdown(f"**{col}** — {len(outliers)} outlier(s):")
+                st.dataframe(outliers.rename("valor"), use_container_width=True)
+        if not hay_outliers:
+            st.info("No se detectaron outliers según la regla del rango intercuartílico (IQR).")
 
-        if tipo_split == "Cronológica":
-            st.write(f"**Rango Train:** {train['timestamp'].min()} → {train['timestamp'].max()}")
-            st.write(f"**Rango Validation:** {val['timestamp'].min()} → {val['timestamp'].max()}")
-            st.write(f"**Rango Test:** {test['timestamp'].min()} → {test['timestamp'].max()}")
-            st.info(f"📌 Fecha de corte Train → Validation: **{val['timestamp'].min()}**")
+    # ── Pestaña: Análisis del modelo ─────────────────────────────────────────
+    with tab_modelo:
+        st.subheader("Relación entre variables (gráfico 3D)")
+        fig = plt.figure(figsize=(6, 5))
+        ax = fig.add_subplot(projection="3d")
+        ax.scatter(df["temperatura"], df["humedad"], df["sensacion_termica"], color="green")
+        ax.set_xlabel("Temperatura (°C)")
+        ax.set_ylabel("Humedad (%)")
+        ax.set_zlabel("Sens. Térmica (°C)")
+        st.pyplot(fig, use_container_width=True)
+        plt.close(fig)
 
-# ============================================================
-# PÁGINA 5: PROBABILIDAD Y ESTADÍSTICA
-# ============================================================
-elif pagina == "5️⃣ Probabilidad y estadística":
-    st.header("5️⃣ Probabilidad y estadística básica")
+        st.subheader("Ecuación del modelo")
+        beta0 = modelo.intercept_
+        beta1, beta2 = modelo.coef_
+        st.latex(
+            r"\text{sensación\_térmica} = %.3f + %.3f \cdot \text{temperatura} + %.3f \cdot \text{humedad}"
+            % (beta0, beta1, beta2)
+        )
+        st.caption("Coeficientes obtenidos por mínimos cuadrados sobre el conjunto de entrenamiento (70% de los datos).")
 
-    resumen = df[FEATURES].agg(["mean", "var", "std"]).T
-    resumen.columns = ["media", "varianza", "desv_estandar"]
-    st.subheader("Estadística descriptiva")
-    st.dataframe(resumen.round(3), use_container_width=True)
+        st.subheader("Desempeño del modelo")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("MAE", f"{metricas['mae']:.2f} °C")
+        m2.metric("RMSE", f"{metricas['rmse']:.2f} °C")
+        m3.metric("R²", f"{metricas['r2']:.3f}")
+        st.caption("Calculadas sobre un conjunto de prueba (30% de los datos), no visto durante el entrenamiento.")
 
-    st.subheader("Matriz de correlación")
-    corr = df[FEATURES].corr()
-    fig, ax = plt.subplots(figsize=(5, 4))
-    im = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
-    ax.set_xticks(range(len(FEATURES))); ax.set_xticklabels(FEATURES, rotation=45, ha="right")
-    ax.set_yticks(range(len(FEATURES))); ax.set_yticklabels(FEATURES)
-    for i in range(len(FEATURES)):
-        for j in range(len(FEATURES)):
-            ax.text(j, i, f"{corr.iloc[i, j]:.2f}", ha="center", va="center", fontsize=8)
-    fig.colorbar(im, fraction=0.046)
-    st.pyplot(fig)
+    # ── Pestaña: Predicción ───────────────────────────────────────────────────
+    with tab_pred:
+        st.subheader("Predicción con tus propios coeficientes")
+        st.markdown(
+            "Entrena el modelo en tu Colab y copia aquí los coeficientes β₀, β₁ y β₂ que obtuviste, "
+            "junto con una temperatura y humedad, para calcular la predicción aplicando la fórmula directamente."
+        )
+        st.latex(
+            r"\text{sensación\_térmica} = \beta_0 + \beta_1 \cdot \text{temperatura} + \beta_2 \cdot \text{humedad}"
+        )
 
-    st.subheader("Relación entre dos variables (dispersión)")
-    var_x = st.selectbox("Variable X", FEATURES, index=0)
-    var_y = st.selectbox("Variable Y", FEATURES, index=1)
-    fig2, ax2 = plt.subplots(figsize=(6, 4))
-    ax2.scatter(df[var_x], df[var_y], alpha=0.4, s=15)
-    ax2.set_xlabel(var_x); ax2.set_ylabel(var_y)
-    ax2.set_title(f"Covarianza: {df[[var_x, var_y]].cov().iloc[0,1]:.2f} | Correlación: {df[[var_x, var_y]].corr().iloc[0,1]:.2f}")
-    st.pyplot(fig2)
+        bc1, bc2, bc3 = st.columns(3)
+        beta0_input = bc1.number_input("β₀ (intercepto)", value=0.0, format="%.4f")
+        beta1_input = bc2.number_input("β₁ (coef. temperatura)", value=0.0, format="%.4f")
+        beta2_input = bc3.number_input("β₂ (coef. humedad)", value=0.0, format="%.4f")
 
+        pc1, pc2 = st.columns(2)
+        temp_manual = pc1.number_input("Temperatura (°C)", value=float(round(ultima["temperatura"], 1)),
+                                        step=0.1, key="temp_manual")
+        hum_manual = pc2.number_input("Humedad (%)", value=float(round(ultima["humedad"], 1)),
+                                       step=0.1, key="hum_manual")
+
+        if st.button("🔮 Predecir sensación térmica", use_container_width=True):
+            prediccion_manual = beta0_input + beta1_input * temp_manual + beta2_input * hum_manual
+            st.success(f"Sensación térmica estimada: **{prediccion_manual:.2f} °C**")
+
+else:
+    st.info("Presiona **Consultar datos y entrenar modelo** en la barra lateral para comenzar.")
